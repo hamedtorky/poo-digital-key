@@ -1,0 +1,68 @@
+import base64
+from types import SimpleNamespace
+
+import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+
+from digital_key.device import DeviceError, SerialDigitalKey, find_default_port
+
+
+class FakeSerial:
+    def __init__(self, replies):
+        self.replies = iter(replies)
+        self.writes = []
+
+    def reset_input_buffer(self):
+        pass
+
+    def write(self, data):
+        self.writes.append(data)
+
+    def flush(self):
+        pass
+
+    def readline(self):
+        return next(self.replies)
+
+    def close(self):
+        pass
+
+
+def test_public_key_protocol_parses_uncompressed_p256_point():
+    private = ec.generate_private_key(ec.SECP256R1())
+    raw = private.public_key().public_bytes(
+        serialization.Encoding.X962,
+        serialization.PublicFormat.UncompressedPoint,
+    )
+    serial = FakeSerial([b"READY TDKEY1\n", b"PUB " + base64.b64encode(raw) + b"\n"])
+    device = SerialDigitalKey(serial_port=serial)
+
+    result = device.public_key()
+
+    assert result.public_numbers() == private.public_key().public_numbers()
+    assert serial.writes[-1] == b"PUBLIC\n"
+
+
+def test_device_error_is_reported():
+    serial = FakeSerial([b"READY TDKEY1\n", b"ERR confirmation-timeout\n"])
+    device = SerialDigitalKey(serial_port=serial)
+    peer = ec.generate_private_key(ec.SECP256R1()).public_key()
+
+    with pytest.raises(DeviceError, match="confirmation-timeout"):
+        device.derive_key(peer, b"0" * 16)
+
+
+def test_port_discovery_works_with_windows_com_port():
+    ports = [SimpleNamespace(device="COM7", vid=0x303A, pid=0x1001)]
+
+    assert find_default_port(ports) == "COM7"
+
+
+def test_port_discovery_prefers_espressif_device():
+    ports = [
+        SimpleNamespace(device="/dev/cu.Bluetooth-Incoming-Port", vid=None, pid=None),
+        SimpleNamespace(device="/dev/cu.usbmodem101", vid=0x303A, pid=0x1001),
+    ]
+
+    assert find_default_port(ports) == "/dev/cu.usbmodem101"
