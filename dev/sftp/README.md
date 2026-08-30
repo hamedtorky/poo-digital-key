@@ -42,9 +42,11 @@ test the zero-knowledge mode, first run:
 poo vault-init "$HOME/.config/poo/vault.json"
 ```
 
-Then change the mount example to `--remote-path /vault-v1`, add
-`--vault-config "$HOME/.config/poo/vault.json"`, and press the dongle BOOT
-button when prompted.
+Enter and confirm a password of at least 12 characters, then press BOOT to bind
+the password and dongle to the new vault. Change the mount example to
+`--remote-path /vault-v1`, add
+`--vault-config "$HOME/.config/poo/vault.json"`, enter the password, and press
+the dongle BOOT button when prompted.
 
 The default mount backend is selected by platform: `nfsmount` on macOS, using
 the built-in NFS client, and `mount` on Windows or Linux. Windows requires

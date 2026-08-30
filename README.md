@@ -117,8 +117,9 @@ poo --port /dev/ttyACM0 status
 
 The recommended mode encrypts file contents, file names, and directory names on
 the computer before SFTP upload. The server stores only rclone `crypt`
-ciphertext. The two vault credentials are regenerated from the dongle for each
-mount and are not saved in an rclone configuration file.
+ciphertext. The two vault credentials are regenerated from both your password
+and the dongle for each mount and are not saved in an rclone configuration
+file. Neither factor can unlock a new vault by itself.
 
 Start the free local test server, then create a public descriptor while the
 dongle is connected:
@@ -128,9 +129,11 @@ sh dev/sftp/start.sh
 poo vault-init "$HOME/.config/poo/vault.json"
 ```
 
-The descriptor is not a password, but it is required alongside the dongle.
-Back it up with the encrypted server data. Creating a replacement descriptor
-creates a different vault; the command deliberately refuses to overwrite one.
+Enter a new password of at least 12 characters twice, then press the dongle
+BOOT button. The descriptor contains password-derivation parameters but not the
+password or vault keys. Back it up with the encrypted server data. Creating a
+replacement descriptor creates a different vault; the command deliberately
+refuses to overwrite one.
 
 Mount the encrypted local test vault:
 
@@ -146,11 +149,12 @@ poo mount \
   --vault-config "$HOME/.config/poo/vault.json"
 ```
 
-Press BOOT when prompted. Files copied into `POO-Vault` are readable through
-the mounted drive and ciphertext on the server. Unplugging the dongle stops the
-mount. Press Ctrl-C for a normal unmount. The host must be trusted while the
-vault is open because applications and malware running as your user can read
-mounted plaintext.
+Enter the vault password and then press BOOT when prompted. The password input
+is hidden and is never passed as a command-line argument. Files copied into
+`POO-Vault` are readable through the mounted drive and ciphertext on the
+server. Unplugging the dongle stops the mount. Press Ctrl-C for a normal
+unmount. The host must be trusted while the vault is open because applications
+and malware running as your user can read mounted plaintext.
 
 The local development server keeps encrypted `/vault-v1` data in a separate
 Docker volume from the old plaintext `/files` directory. Do not use its test
@@ -244,16 +248,19 @@ module.
 1. **No recovery key:** losing, damaging, or erasing this dongle makes its
    encrypted files unrecoverable. Keep encrypted files backed up, and consider
    building a deliberate recovery-key feature before important use.
-2. **Flash extraction:** the private key is stored in ESP32 NVS, but flash
+2. **No password recovery:** forgetting the password for a password-protected
+   vault also makes that vault permanently unrecoverable. A server administrator
+   cannot reset it.
+3. **Flash extraction:** the private key is stored in ESP32 NVS, but flash
    encryption and Secure Boot are not enabled by this prototype. An attacker
    with physical access and suitable equipment may extract it.
-3. **Trusted computer required:** after physical confirmation, the derived
+4. **Trusted computer required:** after physical confirmation, the derived
    per-document AES key crosses USB to the host process. Malware running as your
    user could capture it while decrypting.
-4. **Whole-file memory use:** the current host application loads one complete
+5. **Whole-file memory use:** the current host application loads one complete
    document into RAM. It is intended for normal documents, not very large disk
    images.
-5. **Button confirmation:** the BOOT press prevents unattended decryption, but
+6. **Button confirmation:** the BOOT press prevents unattended decryption, but
    it is not a PIN and does not identify the person pressing it.
 
 For stronger production use, enable ESP32-S3 Secure Boot and flash encryption,
