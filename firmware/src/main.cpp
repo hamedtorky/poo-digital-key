@@ -2,6 +2,8 @@
 #include <Preferences.h>
 #include <memory>
 
+#include "usb_msc.h"
+
 #include <mbedtls/base64.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/ecdh.h>
@@ -246,6 +248,7 @@ void handleCommand(String line) {
 void setup() {
   pinMode(kBootButton, INPUT_PULLUP);
   Serial.begin(115200);
+  const bool storageReady = usb_msc_begin();
 
   mbedtls_entropy_init(&entropy);
   mbedtls_ctr_drbg_init(&rng);
@@ -262,6 +265,11 @@ void setup() {
   }
   keyReady = result == 0 && loadOrCreateKey();
   Serial.println(keyReady ? "READY TDKEY1" : "ERR key-initialization");
+  if (storageReady) {
+    Serial.printf("STORAGE SD %llu\n", usb_msc_capacity_bytes());
+  } else {
+    Serial.println("STORAGE unavailable");
+  }
 }
 
 void loop() {

@@ -34,6 +34,31 @@ The host tests pass, the firmware compiles for ESP32-S3, and the firmware has
 been uploaded and verified on the original dongle. A computer that only uses
 the key does not need PlatformIO or the firmware toolchain.
 
+## SD card as a USB drive (development branch)
+
+The `feature/sd-card-mass-storage` branch replaces the small read-only installer
+disk with the T-Dongle S3 onboard microSD card. Insert the card before powering
+the dongle. After this branch's firmware is uploaded and the dongle is
+reconnected, Windows, macOS, and Linux see a writable disk named `SD VAULT`.
+No server, SFTP connection, `poo` installation, or Internet connection is
+required to use this disk.
+
+The firmware uses the official T-Dongle S3 4-bit SDMMC wiring: CLK GPIO12, CMD
+GPIO16, D0 GPIO14, D1 GPIO17, D2 GPIO21, and D3 GPIO18. The pin macros in
+`firmware/src/usb_msc.cpp` can be overridden with PlatformIO build flags for a
+different ESP32-S3 board.
+
+The computer owns the SD card filesystem while the dongle is connected. Format
+the disk with the operating system if the card is blank or unreadable, always
+eject it before unplugging, and do not remove the microSD card while it is
+mounted. A failed SD initialization does not disable the serial digital-key
+protocol, so `poo status` remains available for diagnostics.
+
+**Security warning:** this initial SD mode is ordinary writable USB mass
+storage. Files are plaintext on the microSD card and can be read by removing the
+card. It does not yet provide password-gated transparent encryption. Continue
+using `.tdkey` files when data must remain encrypted at rest.
+
 ## Simple first-time setup
 
 For macOS, the normal setup is now one command. You need an Ubuntu server with
