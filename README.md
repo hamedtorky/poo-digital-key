@@ -22,6 +22,9 @@ files with the `TDKEY01` JSON header are still supported for decryption.
 
 - `firmware/src/main.cpp` — ESP32-S3 firmware
 - `host/digital_key/` — Python host application
+- `host/digital_key/remote.py` — secure SFTP virtual-drive launcher
+- `host/digital_key/vault_config.py` — dongle-bound zero-knowledge vault setup
+- `dev/sftp/` — free local SFTP development server
 - `tests/` — encryption, tamper detection, wrong-key, and serial-protocol tests
 - `platformio.ini` — reproducible firmware build configuration
 
@@ -30,6 +33,37 @@ files with the `TDKEY01` JSON header are still supported for decryption.
 The host tests pass, the firmware compiles for ESP32-S3, and the firmware has
 been uploaded and verified on the original dongle. A computer that only uses
 the key does not need PlatformIO or the firmware toolchain.
+
+## Simple first-time setup
+
+For macOS, the normal setup is now one command. You need an Ubuntu server with
+an IP address and an administrator SSH account. Install the `poo` command as
+described below, connect the dongle normally, and run:
+
+```sh
+poo setup
+```
+
+The guided setup performs the remaining work:
+
+1. Detects and verifies the connected dongle.
+2. Asks for the server address, SSH administrator username, SSH port, and an
+   optional administrator identity file. Standard SSH itself asks for host-key
+   confirmation and the administrator/sudo password when required.
+3. Generates a dedicated local SFTP key and remotely installs/configures an
+   OpenSSH SFTP-only `poo` account, chrooted writable vault, firewall rule, and
+   automatic security updates. It validates the SSH configuration before
+   reloading and verifies the new SFTP login.
+4. Reuses `~/.config/poo/vault.json` when it matches the dongle. On a new
+   installation it asks for the vault password twice and asks for BOOT once;
+   it never repeats `vault-init` for an existing vault.
+5. Installs the macOS connection watcher and tells you when to unplug and
+   reconnect. Enter the vault password and press BOOT in the native dialogs;
+   setup finishes when `~/POO-Vault` is mounted.
+
+The Ubuntu server receives only OpenSSH/SFTP configuration and ciphertext.
+Encryption and passwords remain on the client. If setup fails, an existing
+automatic-mount service is restored instead of being left disabled.
 
 ## Install the `poo` command on another computer
 
@@ -110,6 +144,127 @@ The default serial port is detected automatically. To select it explicitly:
 poo --port /dev/ttyACM0 status
 ```
 
+## Mount an encrypted server vault as a virtual drive
+
+The recommended mode encrypts file contents, file names, and directory names on
+the computer before SFTP upload. The server stores only rclone `crypt`
+ciphertext. The two vault credentials are regenerated from both your password
+and the dongle for each mount and are not saved in an rclone configuration
+file. Neither factor can unlock a new vault by itself.
+
+Start the free local test server, then create a public descriptor while the
+dongle is connected:
+
+```sh
+sh dev/sftp/start.sh
+poo vault-init "$HOME/.config/poo/vault.json"
+```
+
+Enter a new password of at least 12 characters twice, then press the dongle
+BOOT button. The descriptor contains password-derivation parameters but not the
+password or vault keys. Back it up with the encrypted server data. Creating a
+replacement descriptor creates a different vault; the command deliberately
+refuses to overwrite one.
+
+Mount the encrypted local test vault:
+
+```sh
+poo mount \
+  --host 127.0.0.1 \
+  --user poo \
+  --sftp-port 2222 \
+  --remote-path /vault-v1 \
+  --mountpoint "$HOME/POO-Vault" \
+  --known-hosts dev/sftp/state/known_hosts \
+  --identity-file dev/sftp/state/client_ed25519 \
+  --vault-config "$HOME/.config/poo/vault.json"
+```
+
+Enter the vault password and then press BOOT when prompted. The password input
+is hidden and is never passed as a command-line argument. Files copied into
+`POO-Vault` are readable through the mounted drive and ciphertext on the
+server. Unplugging the dongle stops the mount. Press Ctrl-C for a normal
+unmount. The host must be trusted while the vault is open because applications
+and malware running as your user can read mounted plaintext.
+
+The local development server keeps encrypted `/vault-v1` data in a separate
+Docker volume from the old plaintext `/files` directory. Do not use its test
+SSH identity on a real server. For the complete threat model and production
+hardening requirements, see `docs/zero-knowledge-vault.md`.
+
+### Automatically prompt when the dongle connects (macOS)
+
+`vault-init` is a one-time operation and must not run on every connection. Once
+the descriptor exists, install the per-user macOS watcher to unlock and mount
+that existing vault automatically:
+
+```sh
+poo automount-install \
+  --host 127.0.0.1 \
+  --user poo \
+  --sftp-port 2222 \
+  --remote-path /vault-v1 \
+  --mountpoint "$HOME/POO-Vault" \
+  --known-hosts "$PWD/dev/sftp/state/known_hosts" \
+  --identity-file "$PWD/dev/sftp/state/client_ed25519" \
+  --vault-config "$HOME/.config/poo/vault.json" \
+  --mount-engine nfsmount
+```
+
+The installer creates a private configuration at
+`~/.config/poo/automount.json` and a login service at
+`~/Library/LaunchAgents/com.poo-digital-key.automount.plist`. It stores no
+password. On insertion, a native hidden-password dialog appears, followed by a
+BOOT-button instruction. Canceling suppresses additional prompts until the
+dongle is reconnected. Removing the dongle unmounts the readable drive.
+
+To disable the watcher:
+
+```sh
+launchctl bootout "gui/$(id -u)" \
+  "$HOME/Library/LaunchAgents/com.poo-digital-key.automount.plist"
+```
+
+## Mount a plaintext SFTP server (legacy development mode)
+
+The host application can use the computer's Internet connection to mount an
+SSH/SFTP directory as a local drive. Server host-key validation is mandatory,
+passwords are not accepted by this command, and remote shell execution is
+disabled. The current development authentication uses an SSH identity file or
+the system SSH agent. A later milestone will replace that agent with signing
+performed by the dongle so its SSH private key never leaves the hardware.
+
+For a free local test server, install and start Docker, then run:
+
+```sh
+sh dev/sftp/start.sh
+```
+
+Install rclone and the platform mount dependency:
+
+- macOS: `brew install rclone`; the default uses `rclone nfsmount` and the
+  built-in NFS client.
+- Windows: install rclone and WinFsp; the mount point can be a drive such as
+  `P:`.
+- Linux: install rclone and FUSE 3; use a directory as the mount point.
+
+Run the local macOS/Linux test mount from the repository root:
+
+```sh
+poo mount \
+  --host 127.0.0.1 \
+  --user poo \
+  --sftp-port 2222 \
+  --remote-path /files \
+  --mountpoint "$PWD/build/poo-mount" \
+  --known-hosts dev/sftp/state/known_hosts \
+  --identity-file dev/sftp/state/client_ed25519
+```
+
+Keep the command running while using the drive and press Ctrl-C to unmount.
+Stop the local server with `sh dev/sftp/stop.sh`. The generated test identity
+under `dev/sftp/state/` is ignored by Git and must never be used in production.
+
 ## Encrypt a document
 
 ```sh
@@ -157,16 +312,19 @@ module.
 1. **No recovery key:** losing, damaging, or erasing this dongle makes its
    encrypted files unrecoverable. Keep encrypted files backed up, and consider
    building a deliberate recovery-key feature before important use.
-2. **Flash extraction:** the private key is stored in ESP32 NVS, but flash
+2. **No password recovery:** forgetting the password for a password-protected
+   vault also makes that vault permanently unrecoverable. A server administrator
+   cannot reset it.
+3. **Flash extraction:** the private key is stored in ESP32 NVS, but flash
    encryption and Secure Boot are not enabled by this prototype. An attacker
    with physical access and suitable equipment may extract it.
-3. **Trusted computer required:** after physical confirmation, the derived
+4. **Trusted computer required:** after physical confirmation, the derived
    per-document AES key crosses USB to the host process. Malware running as your
    user could capture it while decrypting.
-4. **Whole-file memory use:** the current host application loads one complete
+5. **Whole-file memory use:** the current host application loads one complete
    document into RAM. It is intended for normal documents, not very large disk
    images.
-5. **Button confirmation:** the BOOT press prevents unattended decryption, but
+6. **Button confirmation:** the BOOT press prevents unattended decryption, but
    it is not a PIN and does not identify the person pressing it.
 
 For stronger production use, enable ESP32-S3 Secure Boot and flash encryption,
