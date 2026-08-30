@@ -109,6 +109,7 @@ def main(argv=None) -> int:
                     credentials.password,
                     credentials.filename_password,
                     args.rclone,
+                    device_port=port,
                 )
             print(f"Mounting {args.user}@{args.host}:{args.remote_path} at {args.mountpoint}")
             print("Keep this process running; press Ctrl-C to unmount.")

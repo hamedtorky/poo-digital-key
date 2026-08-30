@@ -2,8 +2,12 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
+
+from serial.tools import list_ports
 
 
 class RemoteError(RuntimeError):
@@ -193,16 +197,54 @@ def run_encrypted_rclone_mount(
     password: str,
     filename_password: str,
     rclone: str = "rclone",
+    device_port: str | None = None,
+    poll_interval: float = 1.0,
 ) -> int:
-    """Mount crypt over SFTP with credentials held only by the child environment."""
+    """Mount crypt over SFTP and stop access as soon as the dongle disappears."""
     config = _resolved_mount_config(config)
-    command = build_encrypted_mount_command(config, rclone)
     obscured_password = obscure_rclone_secret(password, rclone)
     obscured_filename_password = obscure_rclone_secret(filename_password, rclone)
-    environment = build_encrypted_rclone_environment(
-        config, obscured_password, obscured_filename_password
-    )
+    cache_parent = None
+    if config.cache_dir is not None:
+        cache_parent = Path(config.cache_dir).expanduser().resolve()
+        cache_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="poo-vault-", dir=cache_parent) as cache_dir:
+        runtime_config = replace(config, cache_dir=Path(cache_dir))
+        command = build_encrypted_mount_command(runtime_config, rclone)
+        environment = build_encrypted_rclone_environment(
+            runtime_config, obscured_password, obscured_filename_password
+        )
+        try:
+            process = subprocess.Popen(command, env=environment)
+        except OSError as exc:
+            raise RemoteError(f"could not start rclone: {exc}") from exc
+        finally:
+            for name in (
+                "RCLONE_CONFIG_POO_VAULT_PASSWORD",
+                "RCLONE_CONFIG_POO_VAULT_PASSWORD2",
+            ):
+                environment.pop(name, None)
+
+        try:
+            if device_port is None:
+                return process.wait()
+            while process.poll() is None:
+                if not any(port.device == device_port for port in list_ports.comports()):
+                    _stop_mount_process(process)
+                    raise RemoteError("dongle disconnected; encrypted vault was unmounted")
+                time.sleep(poll_interval)
+            return process.returncode
+        except KeyboardInterrupt:
+            _stop_mount_process(process)
+            raise
+
+
+def _stop_mount_process(process) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
     try:
-        return subprocess.run(command, env=environment, check=False).returncode
-    except OSError as exc:
-        raise RemoteError(f"could not start rclone: {exc}") from exc
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
