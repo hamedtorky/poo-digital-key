@@ -14,9 +14,9 @@ NVS. It is never returned by the serial protocol.
   button. The dongle derives that document's key after confirmation.
 - Existing output files are never overwritten.
 
-The encrypted format is versioned with the `TDKEY01` magic header. The original
-filename is metadata inside the authenticated header; the file contents remain
-encrypted.
+The encrypted format is versioned. Current v2 uses a compact binary header with
+an 8-byte non-readable magic; no human-readable metadata is stored. Legacy v1
+files with the `TDKEY01` JSON header are still supported for decryption.
 
 ## Project layout
 

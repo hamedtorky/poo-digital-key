@@ -116,6 +116,10 @@ bool loadOrCreateKey() {
 }
 
 bool waitForConfirmation() {
+#ifdef DISABLE_CONFIRMATION
+  // Unattended mode: skip physical confirmation entirely
+  return true;
+#else
   Serial.println("CONFIRM press-BOOT");
   uint32_t started = millis();
   bool sawRelease = digitalRead(kBootButton) == HIGH;
@@ -135,6 +139,7 @@ bool waitForConfirmation() {
     delay(10);
   }
   return false;
+#endif
 }
 
 void sendPublicKey() {

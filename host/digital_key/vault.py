@@ -11,7 +11,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .crypto import derive_file_key
 
-MAGIC = b"TDKEY01\n"
+# Binary magic marker for v2 format (not human-readable)
+MAGIC_V2 = b"\xE3\xB1\x9A\x02\xD7\x5C\xA1\x4F"  # 8 bytes
+MAGIC_V1 = b"TDKEY01\n"  # legacy text header
 MAX_HEADER = 16 * 1024
 
 
@@ -44,6 +46,7 @@ def encrypt_file(source, output, device) -> Path:
     plaintext = source.read_bytes()
     device_public = device.public_key()
     ephemeral_private = ec.generate_private_key(ec.SECP256R1())
+    # Keep uncompressed for widest device compatibility (65 bytes)
     ephemeral_public = ephemeral_private.public_key().public_bytes(
         serialization.Encoding.X962,
         serialization.PublicFormat.UncompressedPoint,
@@ -53,15 +56,12 @@ def encrypt_file(source, output, device) -> Path:
     shared_secret = ephemeral_private.exchange(ec.ECDH(), device_public)
     key = derive_file_key(shared_secret, salt)
 
-    header = {
-        "algorithm": "P-256+HKDF-SHA256+AES-256-GCM",
-        "ephemeral_public": _b64(ephemeral_public),
-        "nonce": _b64(nonce),
-        "original_name": source.name,
-        "salt": _b64(salt),
-    }
-    encoded_header = json.dumps(header, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    prefix = MAGIC + struct.pack(">I", len(encoded_header)) + encoded_header
+    # v2 compact, binary, no human-readable metadata
+    # Layout: MAGIC_V2 (8) | nonce (12) | salt (16) | klen (1=65) | eph_pub (klen)
+    klen = len(ephemeral_public)
+    if klen not in (65, 33):
+        raise FormatError("invalid ephemeral key length")
+    prefix = MAGIC_V2 + nonce + salt + struct.pack("B", klen) + ephemeral_public
     ciphertext = AESGCM(key).encrypt(nonce, plaintext, prefix)
     _write_new(output, prefix + ciphertext)
     return output
@@ -73,17 +73,42 @@ def decrypt_file(source, output, device) -> Path:
     if output.exists():
         raise FileExistsError(output)
     data = source.read_bytes()
-    if len(data) < len(MAGIC) + 4 or not data.startswith(MAGIC):
+
+    # v2 binary format
+    if len(data) >= len(MAGIC_V2) + 12 + 16 + 1 and data.startswith(MAGIC_V2):
+        idx = len(MAGIC_V2)
+        nonce = data[idx:idx+12]; idx += 12
+        salt = data[idx:idx+16]; idx += 16
+        klen = data[idx]; idx += 1
+        if klen not in (65, 33) or idx + klen > len(data):
+            raise FormatError("invalid encrypted-file header")
+        peer_raw = data[idx:idx+klen]
+        header_end = idx + klen
+        prefix = data[:header_end]
+        try:
+            peer = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), peer_raw)
+        except ValueError as exc:
+            raise FormatError("invalid encrypted-file header") from exc
+        key = device.derive_key(peer, salt)
+        try:
+            plaintext = AESGCM(key).decrypt(nonce, data[header_end:], prefix)
+        except InvalidTag as exc:
+            raise FormatError("wrong dongle or damaged encrypted file") from exc
+        _write_new(output, plaintext)
+        return output
+
+    # legacy v1 JSON format
+    if len(data) < len(MAGIC_V1) + 4 or not data.startswith(MAGIC_V1):
         raise FormatError("not a T-Dongle encrypted file")
-    header_size = struct.unpack(">I", data[len(MAGIC):len(MAGIC) + 4])[0]
+    header_size = struct.unpack(">I", data[len(MAGIC_V1):len(MAGIC_V1) + 4])[0]
     if header_size > MAX_HEADER:
         raise FormatError("invalid encrypted-file header")
-    header_end = len(MAGIC) + 4 + header_size
+    header_end = len(MAGIC_V1) + 4 + header_size
     if header_end > len(data):
         raise FormatError("truncated encrypted file")
     prefix = data[:header_end]
     try:
-        header = json.loads(data[len(MAGIC) + 4:header_end].decode("utf-8"))
+        header = json.loads(data[len(MAGIC_V1) + 4:header_end].decode("utf-8"))
         if header["algorithm"] != "P-256+HKDF-SHA256+AES-256-GCM":
             raise FormatError("unsupported encryption algorithm")
         peer_raw = _unb64(header["ephemeral_public"])

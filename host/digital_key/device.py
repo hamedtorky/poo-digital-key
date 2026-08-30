@@ -47,6 +47,12 @@ class SerialDigitalKey:
                 continue
             if line.startswith("ERR "):
                 raise DeviceError(line[4:])
+            # Ignore firmware prompts during interactive flows
+            if line.startswith("CONFIRM "):
+                continue
+            # Ignore stray READY banners when not explicitly waiting for them
+            if not expect_ready and line == "READY TDKEY1":
+                continue
             if expect_ready and line != "READY TDKEY1":
                 continue
             return line
