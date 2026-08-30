@@ -92,6 +92,28 @@ def find_esp_port() -> str | None:
     return None
 
 
+def serial_port_owners(device_port: str) -> list[str]:
+    """Return other macOS processes that already have the dongle open."""
+    if platform.system() != "Darwin":
+        return []
+    result = subprocess.run(
+        ["/usr/sbin/lsof", "-Fpc", "--", device_port],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    owners = []
+    current_pid = None
+    for line in result.stdout.splitlines():
+        if line.startswith("p") and line[1:].isdigit():
+            current_pid = int(line[1:])
+        elif line.startswith("c") and current_pid not in (None, os.getpid()):
+            owner = f"{line[1:]} (PID {current_pid})"
+            if owner not in owners:
+                owners.append(owner)
+    return owners
+
+
 def _run_applescript(script: str) -> str | None:
     result = subprocess.run(
         ["/usr/bin/osascript", "-e", script],
@@ -168,6 +190,16 @@ def run_automount_loop(config_path: Path, poll_interval: float = 1.0) -> None:
             continue
         handled_port = port
         print(f"Dongle detected: {port}", flush=True)
+        owners = serial_port_owners(port)
+        if owners:
+            owner_text = ", ".join(owners)
+            message = (
+                f"The USB dongle is busy in {owner_text}. Quit that application, "
+                "then unplug and reconnect the dongle."
+            )
+            print(f"Automatic mount blocked: {message}", flush=True)
+            show_message(message)
+            continue
         try:
             unlock_and_mount(config, port)
         except DongleDisconnected:

@@ -10,6 +10,7 @@ from digital_key.automount import (
     install_launch_agent,
     load_automount_config,
     save_automount_config,
+    serial_port_owners,
     unlock_and_mount,
 )
 from digital_key.remote import DongleDisconnected
@@ -57,6 +58,19 @@ def test_find_esp_port_ignores_unrelated_serial_devices(monkeypatch):
     )
 
     assert find_esp_port() == "/dev/cu.usbmodem101"
+
+
+def test_serial_port_owner_reports_competing_application(monkeypatch):
+    monkeypatch.setattr("digital_key.automount.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("digital_key.automount.os.getpid", lambda: 100)
+    monkeypatch.setattr(
+        "digital_key.automount.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout="p77012\ncUltiMaker-Cura\np100\ncpoo\n", returncode=0
+        ),
+    )
+
+    assert serial_port_owners("/dev/cu.usbmodem101") == ["UltiMaker-Cura (PID 77012)"]
 
 
 def test_unlock_uses_existing_descriptor_and_password(tmp_path, monkeypatch):
