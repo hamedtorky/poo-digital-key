@@ -34,6 +34,37 @@ The host tests pass, the firmware compiles for ESP32-S3, and the firmware has
 been uploaded and verified on the original dongle. A computer that only uses
 the key does not need PlatformIO or the firmware toolchain.
 
+## Simple first-time setup
+
+For macOS, the normal setup is now one command. You need an Ubuntu server with
+an IP address and an administrator SSH account. Install the `poo` command as
+described below, connect the dongle normally, and run:
+
+```sh
+poo setup
+```
+
+The guided setup performs the remaining work:
+
+1. Detects and verifies the connected dongle.
+2. Asks for the server address, SSH administrator username, SSH port, and an
+   optional administrator identity file. Standard SSH itself asks for host-key
+   confirmation and the administrator/sudo password when required.
+3. Generates a dedicated local SFTP key and remotely installs/configures an
+   OpenSSH SFTP-only `poo` account, chrooted writable vault, firewall rule, and
+   automatic security updates. It validates the SSH configuration before
+   reloading and verifies the new SFTP login.
+4. Reuses `~/.config/poo/vault.json` when it matches the dongle. On a new
+   installation it asks for the vault password twice and asks for BOOT once;
+   it never repeats `vault-init` for an existing vault.
+5. Installs the macOS connection watcher and tells you when to unplug and
+   reconnect. Enter the vault password and press BOOT in the native dialogs;
+   setup finishes when `~/POO-Vault` is mounted.
+
+The Ubuntu server receives only OpenSSH/SFTP configuration and ciphertext.
+Encryption and passwords remain on the client. If setup fails, an existing
+automatic-mount service is restored instead of being left disabled.
+
 ## Install the `poo` command on another computer
 
 Copy or unzip this complete project folder onto the target computer first. The
