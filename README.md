@@ -54,6 +54,9 @@ eject it before unplugging, and do not remove the microSD card while it is
 mounted. A failed SD initialization does not disable the serial digital-key
 protocol, so `poo status` remains available for diagnostics.
 
+This composite drive uses TinyUSB device mode (`ARDUINO_USB_MODE=0`) so mass
+storage and the `poo` serial protocol are available through the same USB plug.
+
 **Security warning:** this initial SD mode is ordinary writable USB mass
 storage. Files are plaintext on the microSD card and can be read by removing the
 card. It does not yet provide password-gated transparent encryption. Continue
