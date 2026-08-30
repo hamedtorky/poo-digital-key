@@ -1,0 +1,26 @@
+Port 22
+ListenAddress 0.0.0.0
+Protocol 2
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+UsePAM no
+AllowUsers poo
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+
+AllowAgentForwarding no
+AllowTcpForwarding no
+X11Forwarding no
+PermitTunnel no
+GatewayPorts no
+
+Subsystem sftp internal-sftp
+
+Match User poo
+    ChrootDirectory /srv/sftp
+    ForceCommand internal-sftp
+    DisableForwarding yes

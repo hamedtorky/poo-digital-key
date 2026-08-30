@@ -22,6 +22,8 @@ files with the `TDKEY01` JSON header are still supported for decryption.
 
 - `firmware/src/main.cpp` — ESP32-S3 firmware
 - `host/digital_key/` — Python host application
+- `host/digital_key/remote.py` — secure SFTP virtual-drive launcher
+- `dev/sftp/` — free local SFTP development server
 - `tests/` — encryption, tamper detection, wrong-key, and serial-protocol tests
 - `platformio.ini` — reproducible firmware build configuration
 
@@ -109,6 +111,46 @@ The default serial port is detected automatically. To select it explicitly:
 ```sh
 poo --port /dev/ttyACM0 status
 ```
+
+## Mount an SFTP server as a virtual drive (development MVP)
+
+The host application can use the computer's Internet connection to mount an
+SSH/SFTP directory as a local drive. Server host-key validation is mandatory,
+passwords are not accepted by this command, and remote shell execution is
+disabled. The current development authentication uses an SSH identity file or
+the system SSH agent. A later milestone will replace that agent with signing
+performed by the dongle so its SSH private key never leaves the hardware.
+
+For a free local test server, install and start Docker, then run:
+
+```sh
+sh dev/sftp/start.sh
+```
+
+Install rclone and the platform mount dependency:
+
+- macOS: `brew install rclone`; the default uses `rclone nfsmount` and the
+  built-in NFS client.
+- Windows: install rclone and WinFsp; the mount point can be a drive such as
+  `P:`.
+- Linux: install rclone and FUSE 3; use a directory as the mount point.
+
+Run the local macOS/Linux test mount from the repository root:
+
+```sh
+poo mount \
+  --host localhost \
+  --user poo \
+  --sftp-port 2222 \
+  --remote-path /files \
+  --mountpoint "$PWD/build/poo-mount" \
+  --known-hosts dev/sftp/state/known_hosts \
+  --identity-file dev/sftp/state/client_ed25519
+```
+
+Keep the command running while using the drive and press Ctrl-C to unmount.
+Stop the local server with `sh dev/sftp/stop.sh`. The generated test identity
+under `dev/sftp/state/` is ignored by Git and must never be used in production.
 
 ## Encrypt a document
 
