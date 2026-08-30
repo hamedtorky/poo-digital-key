@@ -12,6 +12,7 @@ from digital_key.automount import (
     save_automount_config,
     unlock_and_mount,
 )
+from digital_key.remote import DongleDisconnected
 
 
 def _config(tmp_path: Path) -> AutoMountConfig:
@@ -136,3 +137,33 @@ def test_launch_agent_runs_installed_watcher(tmp_path, monkeypatch):
     assert value["RunAtLoad"] is True
     assert value["KeepAlive"] is True
     assert stat.S_IMODE(agent_path.stat().st_mode) == 0o600
+
+
+def test_expected_disconnect_does_not_show_error_dialog(tmp_path, monkeypatch, capsys):
+    ports = iter(["/dev/cu.usbmodem101", None])
+    monkeypatch.setattr("digital_key.automount.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("digital_key.automount.load_automount_config", lambda path: _config(tmp_path))
+    monkeypatch.setattr("digital_key.automount.find_esp_port", lambda: next(ports))
+    monkeypatch.setattr(
+        "digital_key.automount.unlock_and_mount",
+        lambda config, port: (_ for _ in ()).throw(DongleDisconnected("removed")),
+    )
+    monkeypatch.setattr(
+        "digital_key.automount.show_message",
+        lambda message: (_ for _ in ()).throw(AssertionError("must not show an error")),
+    )
+    monkeypatch.setattr(
+        "digital_key.automount.time.sleep",
+        lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    from digital_key.automount import run_automount_loop
+
+    try:
+        run_automount_loop(tmp_path / "config.json")
+    except KeyboardInterrupt:
+        pass
+
+    output = capsys.readouterr().out
+    assert "Dongle detected" in output
+    assert "vault unmounted" in output

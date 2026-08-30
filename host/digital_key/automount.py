@@ -10,7 +10,12 @@ from pathlib import Path
 from serial.tools import list_ports
 
 from .device import DeviceError, SerialDigitalKey
-from .remote import RemoteError, SftpMountConfig, run_encrypted_rclone_mount
+from .remote import (
+    DongleDisconnected,
+    RemoteError,
+    SftpMountConfig,
+    run_encrypted_rclone_mount,
+)
 from .vault_config import VaultConfigError, derive_vault_credentials, load_vault_descriptor
 
 
@@ -125,12 +130,15 @@ def show_message(message: str) -> None:
 def unlock_and_mount(config: AutoMountConfig, device_port: str) -> bool:
     password = prompt_password()
     if password is None:
+        print(f"Unlock canceled for {device_port}", flush=True)
         return False
     if not confirm_boot():
+        print(f"BOOT confirmation canceled for {device_port}", flush=True)
         return False
     descriptor = load_vault_descriptor(Path(config.vault_config))
     with SerialDigitalKey(device_port) as device:
         credentials = derive_vault_credentials(device, descriptor, password)
+    print(f"Vault unlocked; mounting at {config.mountpoint}", flush=True)
     return_code = run_encrypted_rclone_mount(
         config.sftp_config(),
         credentials.password,
@@ -140,6 +148,7 @@ def unlock_and_mount(config: AutoMountConfig, device_port: str) -> bool:
     )
     if return_code not in (0, 130):
         raise AutoMountError(f"encrypted mount exited with status {return_code}")
+    print("Encrypted mount stopped", flush=True)
     return True
 
 
@@ -158,9 +167,13 @@ def run_automount_loop(config_path: Path, poll_interval: float = 1.0) -> None:
             time.sleep(poll_interval)
             continue
         handled_port = port
+        print(f"Dongle detected: {port}", flush=True)
         try:
             unlock_and_mount(config, port)
+        except DongleDisconnected:
+            print("Dongle removed; encrypted vault unmounted", flush=True)
         except (AutoMountError, DeviceError, RemoteError, VaultConfigError) as exc:
+            print(f"Automatic mount error: {exc}", flush=True)
             show_message(str(exc))
 
 

@@ -14,6 +14,11 @@ class RemoteError(RuntimeError):
     pass
 
 
+class DongleDisconnected(RemoteError):
+    """The encrypted mount was intentionally stopped after USB removal."""
+
+
+
 _SFTP_REMOTE_NAME = "poo_sftp"
 _VAULT_REMOTE_NAME = "poo_vault"
 
@@ -231,7 +236,9 @@ def run_encrypted_rclone_mount(
             while process.poll() is None:
                 if not any(port.device == device_port for port in list_ports.comports()):
                     _stop_mount_process(process)
-                    raise RemoteError("dongle disconnected; encrypted vault was unmounted")
+                    raise DongleDisconnected(
+                        "dongle disconnected; encrypted vault was unmounted"
+                    )
                 time.sleep(poll_interval)
             return process.returncode
         except KeyboardInterrupt:
