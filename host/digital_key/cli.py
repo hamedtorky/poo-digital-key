@@ -4,8 +4,21 @@ import sys
 from pathlib import Path
 
 from .device import DeviceError, SerialDigitalKey, find_default_port, public_key_fingerprint
-from .remote import RemoteError, SftpMountConfig, build_rclone_mount_command, run_rclone_mount
+from .remote import (
+    RemoteError,
+    SftpMountConfig,
+    build_encrypted_mount_command,
+    build_rclone_mount_command,
+    run_encrypted_rclone_mount,
+    run_rclone_mount,
+)
 from .vault import FormatError, decrypt_file, encrypt_file
+from .vault_config import (
+    VaultConfigError,
+    create_vault_descriptor,
+    derive_vault_credentials,
+    load_vault_descriptor,
+)
 
 
 def default_encrypt_output(source: Path) -> Path:
@@ -36,6 +49,9 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="show the connected key fingerprint")
 
+    vault_init = sub.add_parser("vault-init", help="create a vault descriptor for this dongle")
+    vault_init.add_argument("descriptor", type=Path, help="new public vault descriptor JSON")
+
     mount = sub.add_parser("mount", help="mount an SSH/SFTP server as a local drive")
     mount.add_argument("--host", required=True, help="SSH server hostname")
     mount.add_argument("--user", required=True, help="SSH username")
@@ -46,6 +62,11 @@ def _parser() -> argparse.ArgumentParser:
     mount.add_argument("--identity-file", type=Path, help="test key; omit to use the SSH agent")
     mount.add_argument("--cache-dir", type=Path, help="local write cache directory")
     mount.add_argument("--rclone", default="rclone", help="rclone executable")
+    mount.add_argument(
+        "--vault-config",
+        type=Path,
+        help="encrypt file contents and names using this dongle-bound vault descriptor",
+    )
     mount.add_argument(
         "--mount-engine",
         choices=("auto", "mount", "nfsmount"),
@@ -72,8 +93,23 @@ def main(argv=None) -> int:
                 mount_engine=args.mount_engine,
             )
             if args.dry_run:
-                print(shlex.join(build_rclone_mount_command(config, args.rclone)))
+                builder = build_encrypted_mount_command if args.vault_config else build_rclone_mount_command
+                print(shlex.join(builder(config, args.rclone)))
                 return 0
+            if args.vault_config:
+                descriptor = load_vault_descriptor(args.vault_config)
+                port = args.port or find_default_port()
+                print("Press the dongle BOOT button to unlock the encrypted vault.")
+                with SerialDigitalKey(port) as device:
+                    credentials = derive_vault_credentials(device, descriptor)
+                print(f"Mounting encrypted vault at {args.mountpoint}")
+                print("Keep this process running; press Ctrl-C to unmount.")
+                return run_encrypted_rclone_mount(
+                    config,
+                    credentials.password,
+                    credentials.filename_password,
+                    args.rclone,
+                )
             print(f"Mounting {args.user}@{args.host}:{args.remote_path} at {args.mountpoint}")
             print("Keep this process running; press Ctrl-C to unmount.")
             return run_rclone_mount(config, args.rclone)
@@ -83,6 +119,12 @@ def main(argv=None) -> int:
             if args.command == "status":
                 print(f"Dongle: {port}")
                 print(f"Key fingerprint (SHA-256): {public_key_fingerprint(device.public_key())}")
+                return 0
+            if args.command == "vault-init":
+                descriptor = create_vault_descriptor(device, args.descriptor)
+                print(f"Vault descriptor created: {args.descriptor}")
+                print(f"Bound dongle: {descriptor.dongle_fingerprint}")
+                print("Back up this descriptor with the encrypted server data.")
                 return 0
             if not args.source.is_file():
                 raise FileNotFoundError(args.source)
@@ -96,7 +138,15 @@ def main(argv=None) -> int:
                 decrypt_file(args.source, output, device)
                 print(f"Decrypted: {output}")
         return 0
-    except (DeviceError, RemoteError, FormatError, FileNotFoundError, FileExistsError, PermissionError) as exc:
+    except (
+        DeviceError,
+        RemoteError,
+        FormatError,
+        VaultConfigError,
+        FileNotFoundError,
+        FileExistsError,
+        PermissionError,
+    ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

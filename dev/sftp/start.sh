@@ -4,6 +4,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 STATE_DIR="$SCRIPT_DIR/state"
 SSH_PORT=${POO_SFTP_PORT:-2222}
+SSH_HOST=127.0.0.1
 CLIENT_KEY="$STATE_DIR/client_ed25519"
 KNOWN_HOSTS="$STATE_DIR/known_hosts"
 SCAN_FILE="$STATE_DIR/known_hosts.new"
@@ -17,7 +18,7 @@ docker compose --project-directory "$SCRIPT_DIR" up --build --detach
 
 attempt=0
 while [ "$attempt" -lt 30 ]; do
-    if ssh-keyscan -p "$SSH_PORT" localhost >"$SCAN_FILE" 2>/dev/null && [ -s "$SCAN_FILE" ]; then
+    if ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >"$SCAN_FILE" 2>/dev/null && [ -s "$SCAN_FILE" ]; then
         mv "$SCAN_FILE" "$KNOWN_HOSTS"
         break
     fi
@@ -37,8 +38,8 @@ printf 'ls\n' | sftp \
     -i "$CLIENT_KEY" \
     -o "UserKnownHostsFile=$KNOWN_HOSTS" \
     -P "$SSH_PORT" \
-    poo@localhost
+    "poo@$SSH_HOST"
 
 printf '\nLocal SFTP server is ready.\n'
-printf 'Host: localhost\nPort: %s\nUser: poo\nRemote path: /files\n' "$SSH_PORT"
+printf 'Host: %s\nPort: %s\nUser: poo\nRemote paths: /files and /vault-v1\n' "$SSH_HOST" "$SSH_PORT"
 printf 'Identity: %s\nKnown hosts: %s\n' "$CLIENT_KEY" "$KNOWN_HOSTS"

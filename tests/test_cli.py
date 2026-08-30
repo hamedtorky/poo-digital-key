@@ -38,3 +38,28 @@ def test_mount_dry_run_does_not_require_dongle(tmp_path, capsys):
     assert result == 0
     assert "rclone mount :sftp:/files" in output
     assert "--sftp-known-hosts-file" in output
+
+
+def test_encrypted_mount_dry_run_does_not_unlock_dongle(tmp_path, capsys):
+    known_hosts = tmp_path / "known_hosts"
+    identity = tmp_path / "client_key"
+    known_hosts.write_text("[localhost]:2222 ssh-ed25519 AAAAtest\n")
+    identity.write_text("test key")
+
+    result = main([
+        "mount",
+        "--host", "localhost",
+        "--user", "poo",
+        "--remote-path", "/vault-v1",
+        "--mountpoint", str(tmp_path / "mount"),
+        "--known-hosts", str(known_hosts),
+        "--identity-file", str(identity),
+        "--vault-config", str(tmp_path / "not-read-in-dry-run.json"),
+        "--mount-engine", "mount",
+        "--dry-run",
+    ])
+
+    output = capsys.readouterr().out
+    assert result == 0
+    assert "rclone mount poo_vault:" in output
+    assert "password" not in output.lower()

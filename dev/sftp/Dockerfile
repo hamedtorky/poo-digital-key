@@ -6,8 +6,8 @@ RUN apt-get update \
     && groupadd --gid 10001 poo \
     && useradd --uid 10001 --gid poo --home-dir /files --shell /usr/sbin/nologin poo \
     && passwd -d poo \
-    && mkdir -p /run/sshd /etc/ssh/authorized_keys /srv/sftp/files \
-    && chown poo:poo /srv/sftp/files
+    && mkdir -p /run/sshd /etc/ssh/authorized_keys /srv/sftp/files /srv/sftp/vault-v1 \
+    && chown poo:poo /srv/sftp/files /srv/sftp/vault-v1
 
 COPY sshd_config /etc/ssh/sshd_config
 
