@@ -66,3 +66,47 @@ def test_port_discovery_prefers_espressif_device():
     ]
 
     assert find_default_port(ports) == "/dev/cu.usbmodem101"
+
+
+def test_serial_control_lines_are_inactive_before_open(monkeypatch):
+    events = []
+
+    class UnopenedSerial(FakeSerial):
+        def __init__(self):
+            super().__init__([b"READY TDKEY1\n"])
+            self._dtr = None
+            self._rts = None
+
+        @property
+        def dtr(self):
+            return self._dtr
+
+        @dtr.setter
+        def dtr(self, value):
+            self._dtr = value
+            events.append(("dtr", value))
+
+        @property
+        def rts(self):
+            return self._rts
+
+        @rts.setter
+        def rts(self, value):
+            self._rts = value
+            events.append(("rts", value))
+
+        def open(self):
+            events.append(("open", self.port))
+
+    serial_port = UnopenedSerial()
+    monkeypatch.setattr("digital_key.device.serial.Serial", lambda: serial_port)
+    monkeypatch.setattr("digital_key.device.time.sleep", lambda seconds: None)
+
+    device = SerialDigitalKey("/dev/cu.usbmodem-test")
+
+    assert events == [
+        ("dtr", False),
+        ("rts", False),
+        ("open", "/dev/cu.usbmodem-test"),
+    ]
+    assert device._serial.baudrate == 115200

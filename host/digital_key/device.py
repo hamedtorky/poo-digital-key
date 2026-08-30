@@ -27,7 +27,16 @@ class SerialDigitalKey:
 
     def __init__(self, port: str = "/dev/ttyACM0", serial_port=None):
         if serial_port is None:
-            self._serial = serial.Serial(port, 115200, timeout=20, write_timeout=5)
+            # Configure modem-control lines before opening. Opening ESP32-S3
+            # USB Serial/JTAG with both asserted can force ROM download mode.
+            self._serial = serial.Serial()
+            self._serial.port = port
+            self._serial.baudrate = 115200
+            self._serial.timeout = 20
+            self._serial.write_timeout = 5
+            self._serial.dtr = False
+            self._serial.rts = False
+            self._serial.open()
             time.sleep(1.5)
         else:
             self._serial = serial_port
