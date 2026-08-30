@@ -40,7 +40,6 @@ newer. The same flashed dongle works on Linux, macOS, and Windows.
 ### Linux
 
 ```sh
-cd digital-key
 sh ./install/install.sh
 ```
 
@@ -57,7 +56,6 @@ sudo usermod -aG dialout "$USER"
 Install Python 3.10 or newer from Python.org or Homebrew, then run:
 
 ```sh
-cd digital-key
 sh ./install/install.sh
 ```
 
@@ -135,6 +133,13 @@ poo decrypt /path/to/document.pdf.tdkey
 
 Press the dongle's BOOT button when prompted. The default output removes the
 `.tdkey` suffix. Use `-o` to select another output path.
+
+### Optional: disable BOOT confirmation (testing only)
+You can temporarily allow unattended decryption by compiling the firmware with
+`-DDISABLE_CONFIRMATION=1` in `platformio.ini` under `build_flags`, then
+rebuilding and uploading the firmware. This weakens security and should not be
+used for real protection. Remove the flag and re-upload to restore BOOT
+confirmation.
 
 ## Run verification
 
