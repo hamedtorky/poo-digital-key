@@ -1,6 +1,14 @@
 from pathlib import Path
 
-from digital_key.cli import default_decrypt_output, default_encrypt_output, main
+import pytest
+
+from digital_key.cli import (
+    default_decrypt_output,
+    default_encrypt_output,
+    main,
+    prompt_new_vault_password,
+)
+from digital_key.vault_config import VaultConfigError
 
 
 def test_default_encrypt_output_adds_tdkey_suffix():
@@ -63,3 +71,25 @@ def test_encrypted_mount_dry_run_does_not_unlock_dongle(tmp_path, capsys):
     assert result == 0
     assert "rclone mount poo_vault:" in output
     assert "password" not in output.lower()
+
+
+def test_new_vault_password_is_confirmed_without_echo(monkeypatch):
+    replies = iter(["correct horse battery staple", "correct horse battery staple"])
+    prompts = []
+
+    def fake_getpass(prompt):
+        prompts.append(prompt)
+        return next(replies)
+
+    monkeypatch.setattr("digital_key.cli.getpass.getpass", fake_getpass)
+
+    assert prompt_new_vault_password() == "correct horse battery staple"
+    assert len(prompts) == 2
+
+
+def test_new_vault_password_must_match(monkeypatch):
+    replies = iter(["correct horse battery staple", "different battery staple"])
+    monkeypatch.setattr("digital_key.cli.getpass.getpass", lambda prompt: next(replies))
+
+    with pytest.raises(VaultConfigError, match="do not match"):
+        prompt_new_vault_password()

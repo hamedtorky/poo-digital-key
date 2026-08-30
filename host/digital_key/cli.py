@@ -1,4 +1,5 @@
 import argparse
+import getpass
 import shlex
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ from .remote import (
 )
 from .vault import FormatError, decrypt_file, encrypt_file
 from .vault_config import (
+    DESCRIPTOR_VERSION,
     VaultConfigError,
     create_vault_descriptor,
     derive_vault_credentials,
@@ -29,6 +31,24 @@ def default_decrypt_output(source: Path) -> Path:
     if source.name.endswith(".tdkey"):
         return source.with_name(source.name[:-6])
     return source.with_name(source.name + ".decrypted")
+
+
+def prompt_new_vault_password() -> str:
+    try:
+        password = getpass.getpass("Create vault password (minimum 12 characters): ")
+        confirmation = getpass.getpass("Repeat vault password: ")
+    except (EOFError, OSError) as exc:
+        raise VaultConfigError("could not securely read the vault password") from exc
+    if password != confirmation:
+        raise VaultConfigError("vault passwords do not match")
+    return password
+
+
+def prompt_vault_password() -> str:
+    try:
+        return getpass.getpass("Vault password: ")
+    except (EOFError, OSError) as exc:
+        raise VaultConfigError("could not securely read the vault password") from exc
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -98,10 +118,18 @@ def main(argv=None) -> int:
                 return 0
             if args.vault_config:
                 descriptor = load_vault_descriptor(args.vault_config)
+                password = None
+                if descriptor.version == DESCRIPTOR_VERSION:
+                    password = prompt_vault_password()
+                else:
+                    print(
+                        "Warning: this legacy vault has no password protection.",
+                        file=sys.stderr,
+                    )
                 port = args.port or find_default_port()
                 print("Press the dongle BOOT button to unlock the encrypted vault.")
                 with SerialDigitalKey(port) as device:
-                    credentials = derive_vault_credentials(device, descriptor)
+                    credentials = derive_vault_credentials(device, descriptor, password)
                 print(f"Mounting encrypted vault at {args.mountpoint}")
                 print("Keep this process running; press Ctrl-C to unmount.")
                 return run_encrypted_rclone_mount(
@@ -115,6 +143,9 @@ def main(argv=None) -> int:
             print("Keep this process running; press Ctrl-C to unmount.")
             return run_rclone_mount(config, args.rclone)
 
+        new_vault_password = None
+        if args.command == "vault-init":
+            new_vault_password = prompt_new_vault_password()
         port = args.port or find_default_port()
         with SerialDigitalKey(port) as device:
             if args.command == "status":
@@ -122,7 +153,10 @@ def main(argv=None) -> int:
                 print(f"Key fingerprint (SHA-256): {public_key_fingerprint(device.public_key())}")
                 return 0
             if args.command == "vault-init":
-                descriptor = create_vault_descriptor(device, args.descriptor)
+                print("Press the dongle BOOT button to bind the password to this vault.")
+                descriptor = create_vault_descriptor(
+                    device, args.descriptor, new_vault_password
+                )
                 print(f"Vault descriptor created: {args.descriptor}")
                 print(f"Bound dongle: {descriptor.dongle_fingerprint}")
                 print("Back up this descriptor with the encrypted server data.")
