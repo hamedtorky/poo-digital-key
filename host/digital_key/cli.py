@@ -22,6 +22,7 @@ from .remote import (
     run_rclone_mount,
 )
 from .vault import FormatError, decrypt_file, encrypt_file
+from .setup_wizard import SetupError, run_setup_wizard
 from .vault_config import (
     DESCRIPTOR_VERSION,
     VaultConfigError,
@@ -76,6 +77,7 @@ def _parser() -> argparse.ArgumentParser:
     decrypt.add_argument("-o", "--output", type=Path)
 
     sub.add_parser("status", help="show the connected key fingerprint")
+    sub.add_parser("setup", help="guided dongle, server, vault, and automatic-mount setup")
 
     vault_init = sub.add_parser("vault-init", help="create a vault descriptor for this dongle")
     vault_init.add_argument("descriptor", type=Path, help="new public vault descriptor JSON")
@@ -130,6 +132,10 @@ def main(argv=None) -> int:
     try:
         if args.command == "automount-run":
             run_automount_loop(args.config)
+            return 0
+
+        if args.command == "setup":
+            run_setup_wizard(prompt_new_vault_password)
             return 0
 
         if args.command == "automount-install":
@@ -239,6 +245,7 @@ def main(argv=None) -> int:
     except (
         DeviceError,
         AutoMountError,
+        SetupError,
         RemoteError,
         FormatError,
         VaultConfigError,
