@@ -13,6 +13,7 @@ from digital_key.automount import (
     unlock_and_mount,
 )
 from digital_key.remote import DongleDisconnected
+from digital_key.vault_config import VaultConfigError
 
 
 def _config(tmp_path: Path) -> AutoMountConfig:
@@ -167,3 +168,28 @@ def test_expected_disconnect_does_not_show_error_dialog(tmp_path, monkeypatch, c
     output = capsys.readouterr().out
     assert "Dongle detected" in output
     assert "vault unmounted" in output
+
+
+def test_unlock_error_allows_retry_without_reconnect(tmp_path, monkeypatch):
+    attempts = []
+    monkeypatch.setattr("digital_key.automount.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("digital_key.automount.load_automount_config", lambda path: _config(tmp_path))
+    monkeypatch.setattr("digital_key.automount.find_esp_port", lambda: "/dev/cu.usbmodem101")
+
+    def fake_unlock(config, port):
+        attempts.append(port)
+        if len(attempts) == 1:
+            raise VaultConfigError("incorrect vault password")
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr("digital_key.automount.unlock_and_mount", fake_unlock)
+    monkeypatch.setattr("digital_key.automount.show_message", lambda message: None)
+
+    try:
+        from digital_key.automount import run_automount_loop
+
+        run_automount_loop(tmp_path / "config.json")
+    except KeyboardInterrupt:
+        pass
+
+    assert attempts == ["/dev/cu.usbmodem101", "/dev/cu.usbmodem101"]

@@ -175,6 +175,10 @@ def run_automount_loop(config_path: Path, poll_interval: float = 1.0) -> None:
         except (AutoMountError, DeviceError, RemoteError, VaultConfigError) as exc:
             print(f"Automatic mount error: {exc}", flush=True)
             show_message(str(exc))
+            # Permit a deliberate retry while the dongle remains connected.
+            # A canceled password/BOOT dialog returns normally and keeps the
+            # port handled, so cancellation never creates prompt spam.
+            handled_port = None
 
 
 def install_launch_agent(
