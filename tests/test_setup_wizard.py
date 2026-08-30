@@ -125,3 +125,24 @@ def test_guided_setup_orchestrates_server_vault_and_automount(tmp_path, monkeypa
     assert captured["config"].host == "server.example"
     assert captured["config"].remote_path == "/vault"
     assert captured["config"].mountpoint == str(tmp_path / "POO-Vault")
+
+
+def test_guided_setup_restores_previous_agent_after_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr("digital_key.setup_wizard.platform.system", lambda: "Darwin")
+    previous_agent = tmp_path / "previous.plist"
+    monkeypatch.setattr(
+        "digital_key.setup_wizard._stop_existing_agent", lambda: previous_agent
+    )
+    monkeypatch.setattr(
+        "digital_key.setup_wizard._run_setup_wizard",
+        lambda prompt: (_ for _ in ()).throw(SetupError("server failed")),
+    )
+    restored = []
+    monkeypatch.setattr(
+        "digital_key.setup_wizard.activate_launch_agent", lambda path: restored.append(path)
+    )
+
+    with pytest.raises(SetupError, match="server failed"):
+        run_setup_wizard(lambda: "password")
+
+    assert restored == [previous_agent]

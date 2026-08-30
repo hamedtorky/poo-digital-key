@@ -194,9 +194,9 @@ def _wait_for_dongle(present: bool) -> str | None:
         time.sleep(1)
 
 
-def _stop_existing_agent() -> None:
+def _stop_existing_agent() -> Path | None:
     if platform.system() != "Darwin":
-        return
+        return None
     agent_path = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_LABEL}.plist"
     if agent_path.exists():
         subprocess.run(
@@ -205,12 +205,23 @@ def _stop_existing_agent() -> None:
             stderr=subprocess.DEVNULL,
             check=False,
         )
+        return agent_path
+    return None
 
 
 def run_setup_wizard(prompt_new_password) -> None:
     if platform.system() != "Darwin":
         raise SetupError("the one-command setup currently supports macOS")
-    _stop_existing_agent()
+    previous_agent = _stop_existing_agent()
+    try:
+        _run_setup_wizard(prompt_new_password)
+    except BaseException:
+        if previous_agent is not None:
+            activate_launch_agent(previous_agent)
+        raise
+
+
+def _run_setup_wizard(prompt_new_password) -> None:
     print("1/5 Checking the USB dongle...")
     port = find_default_port()
     with SerialDigitalKey(port) as device:
