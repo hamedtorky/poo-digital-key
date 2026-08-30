@@ -124,3 +124,19 @@ def test_serial_read_conflict_has_actionable_error():
 
     with pytest.raises(DeviceError, match="close Cura"):
         SerialDigitalKey(serial_port=conflicted)
+
+
+def test_unexpected_derive_response_never_exposes_device_output():
+    secret_fragment = "oO9iqDrxj4kFsKO4V+/lJydPO2vK7+U="
+    serial = FakeSerial([
+        b"READY TDKEY1\n",
+        f"KY {secret_fragment}\n".encode(),
+    ])
+    device = SerialDigitalKey(serial_port=serial)
+    peer = ec.generate_private_key(ec.SECP256R1()).public_key()
+
+    with pytest.raises(DeviceError) as captured:
+        device.derive_key(peer, b"0" * 16)
+
+    assert "unexpected DERIVE response format" in str(captured.value)
+    assert secret_fragment not in str(captured.value)

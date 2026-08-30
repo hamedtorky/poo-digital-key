@@ -51,7 +51,7 @@ class SerialDigitalKey:
         self._write(b"HELLO\n")
         line = self._read_line(expect_ready=True)
         if line != "READY TDKEY1":
-            raise DeviceError(f"unexpected device greeting: {line}")
+            raise DeviceError("unexpected device greeting")
 
     def close(self):
         self._serial.close()
@@ -101,7 +101,7 @@ class SerialDigitalKey:
         self._write(b"PUBLIC\n")
         line = self._read_line()
         if not line.startswith("PUB "):
-            raise DeviceError(f"unexpected PUBLIC response: {line}")
+            raise DeviceError("unexpected PUBLIC response format")
         try:
             raw = base64.b64decode(line[4:], validate=True)
             return ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), raw)
@@ -119,7 +119,7 @@ class SerialDigitalKey:
         self._write(command)
         line = self._read_line()
         if not line.startswith("KEY "):
-            raise DeviceError(f"unexpected DERIVE response: {line}")
+            raise DeviceError("unexpected DERIVE response format")
         try:
             key = base64.b64decode(line[4:], validate=True)
         except ValueError as exc:
