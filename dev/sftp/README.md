@@ -15,7 +15,7 @@ the repository root:
 
 ```sh
 poo mount \
-  --host localhost \
+  --host 127.0.0.1 \
   --user poo \
   --sftp-port 2222 \
   --remote-path /files \
@@ -33,6 +33,18 @@ sh dev/sftp/stop.sh
 
 The development identity is intentionally separate from the eventual hardware
 SSH key and must never be used on a production server.
+
+The fixture exposes two persistent paths: `/files` for the original plaintext
+mount test and `/vault-v1` for encrypted-vault testing. Keep them separate. To
+test the zero-knowledge mode, first run:
+
+```sh
+poo vault-init "$HOME/.config/poo/vault.json"
+```
+
+Then change the mount example to `--remote-path /vault-v1`, add
+`--vault-config "$HOME/.config/poo/vault.json"`, and press the dongle BOOT
+button when prompted.
 
 The default mount backend is selected by platform: `nfsmount` on macOS, using
 the built-in NFS client, and `mount` on Windows or Linux. Windows requires

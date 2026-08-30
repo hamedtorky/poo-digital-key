@@ -23,6 +23,7 @@ files with the `TDKEY01` JSON header are still supported for decryption.
 - `firmware/src/main.cpp` — ESP32-S3 firmware
 - `host/digital_key/` — Python host application
 - `host/digital_key/remote.py` — secure SFTP virtual-drive launcher
+- `host/digital_key/vault_config.py` — dongle-bound zero-knowledge vault setup
 - `dev/sftp/` — free local SFTP development server
 - `tests/` — encryption, tamper detection, wrong-key, and serial-protocol tests
 - `platformio.ini` — reproducible firmware build configuration
@@ -112,7 +113,51 @@ The default serial port is detected automatically. To select it explicitly:
 poo --port /dev/ttyACM0 status
 ```
 
-## Mount an SFTP server as a virtual drive (development MVP)
+## Mount an encrypted server vault as a virtual drive
+
+The recommended mode encrypts file contents, file names, and directory names on
+the computer before SFTP upload. The server stores only rclone `crypt`
+ciphertext. The two vault credentials are regenerated from the dongle for each
+mount and are not saved in an rclone configuration file.
+
+Start the free local test server, then create a public descriptor while the
+dongle is connected:
+
+```sh
+sh dev/sftp/start.sh
+poo vault-init "$HOME/.config/poo/vault.json"
+```
+
+The descriptor is not a password, but it is required alongside the dongle.
+Back it up with the encrypted server data. Creating a replacement descriptor
+creates a different vault; the command deliberately refuses to overwrite one.
+
+Mount the encrypted local test vault:
+
+```sh
+poo mount \
+  --host 127.0.0.1 \
+  --user poo \
+  --sftp-port 2222 \
+  --remote-path /vault-v1 \
+  --mountpoint "$HOME/POO-Vault" \
+  --known-hosts dev/sftp/state/known_hosts \
+  --identity-file dev/sftp/state/client_ed25519 \
+  --vault-config "$HOME/.config/poo/vault.json"
+```
+
+Press BOOT when prompted. Files copied into `POO-Vault` are readable through
+the mounted drive and ciphertext on the server. Unplugging the dongle stops the
+mount. Press Ctrl-C for a normal unmount. The host must be trusted while the
+vault is open because applications and malware running as your user can read
+mounted plaintext.
+
+The local development server keeps encrypted `/vault-v1` data in a separate
+Docker volume from the old plaintext `/files` directory. Do not use its test
+SSH identity on a real server. For the complete threat model and production
+hardening requirements, see `docs/zero-knowledge-vault.md`.
+
+## Mount a plaintext SFTP server (legacy development mode)
 
 The host application can use the computer's Internet connection to mount an
 SSH/SFTP directory as a local drive. Server host-key validation is mandatory,
@@ -139,7 +184,7 @@ Run the local macOS/Linux test mount from the repository root:
 
 ```sh
 poo mount \
-  --host localhost \
+  --host 127.0.0.1 \
   --user poo \
   --sftp-port 2222 \
   --remote-path /files \
