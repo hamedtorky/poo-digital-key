@@ -1,10 +1,18 @@
 import argparse
 import getpass
 import shlex
+import shutil
 import sys
 from pathlib import Path
 
 from .device import DeviceError, SerialDigitalKey, find_default_port, public_key_fingerprint
+from .automount import (
+    AutoMountConfig,
+    AutoMountError,
+    activate_launch_agent,
+    install_launch_agent,
+    run_automount_loop,
+)
 from .remote import (
     RemoteError,
     SftpMountConfig,
@@ -94,12 +102,64 @@ def _parser() -> argparse.ArgumentParser:
         help="rclone mount backend (default: auto)",
     )
     mount.add_argument("--dry-run", action="store_true", help="print the command without mounting")
+
+    auto_install = sub.add_parser(
+        "automount-install", help="prompt and mount the encrypted vault when its dongle connects"
+    )
+    auto_install.add_argument("--host", required=True, help="SSH server hostname")
+    auto_install.add_argument("--user", required=True, help="SSH username")
+    auto_install.add_argument("--sftp-port", type=int, default=22, help="SSH port")
+    auto_install.add_argument("--remote-path", required=True, help="encrypted remote directory")
+    auto_install.add_argument("--mountpoint", required=True, help="local mount directory")
+    auto_install.add_argument("--known-hosts", required=True, type=Path)
+    auto_install.add_argument("--identity-file", type=Path)
+    auto_install.add_argument("--cache-dir", type=Path)
+    auto_install.add_argument("--rclone", default="rclone")
+    auto_install.add_argument("--vault-config", required=True, type=Path)
+    auto_install.add_argument(
+        "--mount-engine", choices=("auto", "mount", "nfsmount"), default="auto"
+    )
+
+    auto_run = sub.add_parser("automount-run", help=argparse.SUPPRESS)
+    auto_run.add_argument("config", type=Path)
     return parser
 
 
 def main(argv=None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if args.command == "automount-run":
+            run_automount_loop(args.config)
+            return 0
+
+        if args.command == "automount-install":
+            config = AutoMountConfig(
+                host=args.host,
+                user=args.user,
+                port=args.sftp_port,
+                remote_path=args.remote_path,
+                mountpoint=str(Path(args.mountpoint).expanduser().resolve()),
+                known_hosts=str(args.known_hosts.expanduser().resolve()),
+                identity_file=(
+                    str(args.identity_file.expanduser().resolve())
+                    if args.identity_file else None
+                ),
+                cache_dir=(str(args.cache_dir.expanduser().resolve()) if args.cache_dir else None),
+                vault_config=str(args.vault_config.expanduser().resolve()),
+                rclone=args.rclone,
+                mount_engine=args.mount_engine,
+            )
+            config.sftp_config().validate()
+            if not Path(config.vault_config).is_file():
+                raise AutoMountError(f"vault descriptor not found: {config.vault_config}")
+            executable = Path(shutil.which("poo") or sys.argv[0])
+            config_path, agent_path = install_launch_agent(config, executable)
+            activate_launch_agent(agent_path)
+            print(f"Automatic encrypted mount installed: {agent_path}")
+            print(f"Configuration: {config_path}")
+            print("Reconnect the dongle to trigger the password prompt.")
+            return 0
+
         if args.command == "mount":
             config = SftpMountConfig(
                 host=args.host,
@@ -175,6 +235,7 @@ def main(argv=None) -> int:
         return 0
     except (
         DeviceError,
+        AutoMountError,
         RemoteError,
         FormatError,
         VaultConfigError,
