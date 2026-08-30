@@ -2,6 +2,7 @@ import base64
 from types import SimpleNamespace
 
 import pytest
+import serial as pyserial
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
@@ -76,6 +77,7 @@ def test_serial_control_lines_are_inactive_before_open(monkeypatch):
             super().__init__([b"READY TDKEY1\n"])
             self._dtr = None
             self._rts = None
+            self.exclusive = None
 
         @property
         def dtr(self):
@@ -110,3 +112,15 @@ def test_serial_control_lines_are_inactive_before_open(monkeypatch):
         ("open", "/dev/cu.usbmodem-test"),
     ]
     assert device._serial.baudrate == 115200
+    assert device._serial.exclusive is True
+
+
+def test_serial_read_conflict_has_actionable_error():
+    class ConflictedSerial(FakeSerial):
+        def readline(self):
+            raise pyserial.SerialException("multiple access on port")
+
+    conflicted = ConflictedSerial([])
+
+    with pytest.raises(DeviceError, match="close Cura"):
+        SerialDigitalKey(serial_port=conflicted)

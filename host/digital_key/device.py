@@ -34,16 +34,21 @@ class SerialDigitalKey:
             self._serial.baudrate = 115200
             self._serial.timeout = 20
             self._serial.write_timeout = 5
+            self._serial.exclusive = True
             self._serial.dtr = False
             self._serial.rts = False
-            self._serial.open()
+            try:
+                self._serial.open()
+            except (OSError, serial.SerialException) as exc:
+                raise DeviceError(
+                    f"could not exclusively open {port}; close Cura or another app using the dongle"
+                ) from exc
             time.sleep(1.5)
         else:
             self._serial = serial_port
         self._serial.reset_input_buffer()
         # Opening native USB normally resets the board. Ask for a fresh banner.
-        self._serial.write(b"HELLO\n")
-        self._serial.flush()
+        self._write(b"HELLO\n")
         line = self._read_line(expect_ready=True)
         if line != "READY TDKEY1":
             raise DeviceError(f"unexpected device greeting: {line}")
@@ -59,7 +64,12 @@ class SerialDigitalKey:
 
     def _read_line(self, expect_ready=False) -> str:
         for _ in range(30):
-            raw = self._serial.readline()
+            try:
+                raw = self._serial.readline()
+            except (OSError, serial.SerialException) as exc:
+                raise DeviceError(
+                    "USB serial communication failed; close Cura or another app using the dongle"
+                ) from exc
             if not raw:
                 raise DeviceError("dongle did not respond")
             line = raw.decode("ascii", errors="replace").strip()
@@ -78,9 +88,17 @@ class SerialDigitalKey:
             return line
         raise DeviceError("no valid response from dongle")
 
+    def _write(self, value: bytes) -> None:
+        try:
+            self._serial.write(value)
+            self._serial.flush()
+        except (OSError, serial.SerialException) as exc:
+            raise DeviceError(
+                "USB serial communication failed; close Cura or another app using the dongle"
+            ) from exc
+
     def public_key(self):
-        self._serial.write(b"PUBLIC\n")
-        self._serial.flush()
+        self._write(b"PUBLIC\n")
         line = self._read_line()
         if not line.startswith("PUB "):
             raise DeviceError(f"unexpected PUBLIC response: {line}")
@@ -98,8 +116,7 @@ class SerialDigitalKey:
             serialization.PublicFormat.UncompressedPoint,
         )
         command = b"DERIVE " + base64.b64encode(peer) + b" " + base64.b64encode(salt) + b"\n"
-        self._serial.write(command)
-        self._serial.flush()
+        self._write(command)
         line = self._read_line()
         if not line.startswith("KEY "):
             raise DeviceError(f"unexpected DERIVE response: {line}")
