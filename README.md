@@ -161,6 +161,39 @@ Docker volume from the old plaintext `/files` directory. Do not use its test
 SSH identity on a real server. For the complete threat model and production
 hardening requirements, see `docs/zero-knowledge-vault.md`.
 
+### Automatically prompt when the dongle connects (macOS)
+
+`vault-init` is a one-time operation and must not run on every connection. Once
+the descriptor exists, install the per-user macOS watcher to unlock and mount
+that existing vault automatically:
+
+```sh
+poo automount-install \
+  --host 127.0.0.1 \
+  --user poo \
+  --sftp-port 2222 \
+  --remote-path /vault-v1 \
+  --mountpoint "$HOME/POO-Vault" \
+  --known-hosts "$PWD/dev/sftp/state/known_hosts" \
+  --identity-file "$PWD/dev/sftp/state/client_ed25519" \
+  --vault-config "$HOME/.config/poo/vault.json" \
+  --mount-engine nfsmount
+```
+
+The installer creates a private configuration at
+`~/.config/poo/automount.json` and a login service at
+`~/Library/LaunchAgents/com.poo-digital-key.automount.plist`. It stores no
+password. On insertion, a native hidden-password dialog appears, followed by a
+BOOT-button instruction. Canceling suppresses additional prompts until the
+dongle is reconnected. Removing the dongle unmounts the readable drive.
+
+To disable the watcher:
+
+```sh
+launchctl bootout "gui/$(id -u)" \
+  "$HOME/Library/LaunchAgents/com.poo-digital-key.automount.plist"
+```
+
 ## Mount a plaintext SFTP server (legacy development mode)
 
 The host application can use the computer's Internet connection to mount an
