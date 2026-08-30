@@ -1,12 +1,9 @@
 import argparse
-import hashlib
 import shlex
 import sys
 from pathlib import Path
 
-from cryptography.hazmat.primitives import serialization
-
-from .device import DeviceError, SerialDigitalKey, find_default_port
+from .device import DeviceError, SerialDigitalKey, find_default_port, public_key_fingerprint
 from .remote import RemoteError, SftpMountConfig, build_rclone_mount_command, run_rclone_mount
 from .vault import FormatError, decrypt_file, encrypt_file
 
@@ -59,15 +56,6 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _fingerprint(public_key) -> str:
-    encoded = public_key.public_bytes(
-        serialization.Encoding.DER,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-    digest = hashlib.sha256(encoded).hexdigest()
-    return ":".join(digest[index:index + 2] for index in range(0, len(digest), 2))
-
-
 def main(argv=None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -94,7 +82,7 @@ def main(argv=None) -> int:
         with SerialDigitalKey(port) as device:
             if args.command == "status":
                 print(f"Dongle: {port}")
-                print(f"Key fingerprint (SHA-256): {_fingerprint(device.public_key())}")
+                print(f"Key fingerprint (SHA-256): {public_key_fingerprint(device.public_key())}")
                 return 0
             if not args.source.is_file():
                 raise FileNotFoundError(args.source)

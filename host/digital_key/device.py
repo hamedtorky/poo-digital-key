@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import time
 
 import serial
@@ -9,6 +10,16 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 class DeviceError(RuntimeError):
     pass
+
+
+def public_key_fingerprint(public_key) -> str:
+    """Return the stable SHA-256 fingerprint used to identify a dongle."""
+    encoded = public_key.public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    digest = hashlib.sha256(encoded).hexdigest()
+    return ":".join(digest[index:index + 2] for index in range(0, len(digest), 2))
 
 
 class SerialDigitalKey:
