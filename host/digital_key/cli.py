@@ -133,6 +133,9 @@ def main(argv=None) -> int:
             return 0
 
         if args.command == "automount-install":
+            rclone_executable = shutil.which(args.rclone)
+            if rclone_executable is None:
+                raise AutoMountError(f"rclone executable not found: {args.rclone}")
             config = AutoMountConfig(
                 host=args.host,
                 user=args.user,
@@ -146,7 +149,7 @@ def main(argv=None) -> int:
                 ),
                 cache_dir=(str(args.cache_dir.expanduser().resolve()) if args.cache_dir else None),
                 vault_config=str(args.vault_config.expanduser().resolve()),
-                rclone=args.rclone,
+                rclone=str(Path(rclone_executable).resolve()),
                 mount_engine=args.mount_engine,
             )
             config.sftp_config().validate()
